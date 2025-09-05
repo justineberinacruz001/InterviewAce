@@ -1,3 +1,5 @@
+let isRecognitionActive = false;
+
 document.addEventListener("DOMContentLoaded", () => {
     // Error handling utilities - Priority 1
     function safeExecute(fn, fallback = () => {}) {
@@ -8,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return fallback();
         }
     }
+    
 
     function safeExecuteWithFeedback(fn, fallback = () => {}, errorMessage = "An error occurred") {
         try {
@@ -241,110 +244,114 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Initialize speech recognition with improved settings - Priority 2
     function initSpeechRecognition() {
-        safeExecuteWithFeedback(() => {
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                recognition = new SpeechRecognition();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = 'en-US';
-                recognition.maxAlternatives = 1;
+    safeExecuteWithFeedback(() => {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
 
-                recognition.onstart = function() {
-                    console.log('Voice recognition started');
-                    updateVoiceStatus('Listening... Speak clearly into your microphone', false);
-                    clearTimeout(recognitionTimeout);
-                };
+            recognition.onstart = function() {
+                console.log('Voice recognition started');
+                isRecognitionActive = true;
+                updateVoiceStatus('Listening... Speak clearly into your microphone', false);
+                clearTimeout(recognitionTimeout);
+            };
 
-                recognition.onresult = function(event) {
-                    safeExecute(() => {
-                        let interimTranscript = '';
-                        
-                        for (let i = event.resultIndex; i < event.results.length; i++) {
-                            const transcript = event.results[i][0].transcript;
-                            if (event.results[i].isFinal) {
-                                finalTranscript += transcript + ' ';
-                                clearTimeout(recognitionTimeout);
-                                
-                                if (isRecording) {
-                                    recognitionTimeout = setTimeout(() => {
-                                        if (isRecording) {
-                                            safeExecute(() => recognition.start());
-                                        }
-                                    }, 100);
-                                }
-                            } else {
-                                interimTranscript += transcript;
+            recognition.onresult = function(event) {
+                safeExecute(() => {
+                    let interimTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcript + ' ';
+                            clearTimeout(recognitionTimeout);
+                            
+                            if (isRecording) {
+                                recognitionTimeout = setTimeout(() => {
+                                    if (isRecording && !isRecognitionActive) {
+                                        safeExecute(() => recognition.start());
+                                    }
+                                }, 100);
                             }
+                        } else {
+                            interimTranscript += transcript;
                         }
-                        
-                        const answerBox = document.getElementById('answerBox');
-                        if (answerBox) {
-                            answerBox.value = finalTranscript + interimTranscript;
-                            answerBox.style.height = 'auto';
-                            answerBox.style.height = answerBox.scrollHeight + 'px';
-                        }
-                        
-                        updateVoiceStatus('Capturing your response...', false);
-                    });
-                };
+                    }
+                    
+                    const answerBox = document.getElementById('answerBox');
+                    if (answerBox) {
+                        answerBox.value = finalTranscript + interimTranscript;
+                        answerBox.style.height = 'auto';
+                        answerBox.style.height = answerBox.scrollHeight + 'px';
+                    }
+                    
+                    updateVoiceStatus('Capturing your response...', false);
+                });
+            };
 
-                recognition.onerror = function(event) {
-                    safeExecute(() => {
-                        console.error('Speech recognition error:', event.error);
-                        let errorMessage = 'Voice recognition error: ';
-                        
-                        switch(event.error) {
-                            case 'network':
-                                errorMessage += 'Network connection issue';
-                                break;
-                            case 'not-allowed':
-                                errorMessage += 'Microphone access denied';
-                                break;
-                            case 'no-speech':
-                                errorMessage += 'No speech detected - try speaking louder';
-                                if (isRecording) {
-                                    setTimeout(() => {
-                                        if (isRecording) {
-                                            safeExecute(() => recognition.start());
-                                        }
-                                    }, 100);
-                                    return;
-                                }
-                                break;
-                            case 'audio-capture':
-                                errorMessage += 'No microphone found';
-                                break;
-                            default:
-                                errorMessage += event.error;
-                        }
-                        
-                        if (event.error !== 'no-speech') {
-                            updateVoiceStatus(errorMessage, true);
-                            stopVoiceRecording();
-                        }
-                    });
-                };
+            recognition.onerror = function(event) {
+                safeExecute(() => {
+                    console.error('Speech recognition error:', event.error);
+                    isRecognitionActive = false;
+                    let errorMessage = 'Voice recognition error: ';
+                    
+                    switch(event.error) {
+                        case 'network':
+                            errorMessage += 'Network connection issue';
+                            break;
+                        case 'not-allowed':
+                            errorMessage += 'Microphone access denied';
+                            break;
+                        case 'no-speech':
+                            errorMessage += 'No speech detected - try speaking louder';
+                            if (isRecording && !isRecognitionActive) {
+                                setTimeout(() => {
+                                    if (isRecording && !isRecognitionActive) {
+                                        safeExecute(() => recognition.start());
+                                    }
+                                }, 100);
+                                return;
+                            }
+                            break;
+                        case 'audio-capture':
+                            errorMessage += 'No microphone found';
+                            break;
+                        default:
+                            errorMessage += event.error;
+                    }
+                    
+                    if (event.error !== 'no-speech') {
+                        updateVoiceStatus(errorMessage, true);
+                        stopVoiceRecording();
+                    }
+                });
+            };
 
-                recognition.onend = function() {
-                    safeExecute(() => {
-                        console.log('Voice recognition ended');
-                        clearTimeout(recognitionTimeout);
-                        
-                        if (isRecording) {
-                            setTimeout(() => {
-                                if (isRecording) {
-                                    safeExecute(() => recognition.start());
-                                }
-                            }, 100);
-                        }
-                    });
-                };
-            }
-        }, () => {
-            console.warn('Speech Recognition not supported');
-        }, "Voice recognition could not be initialized. Please check your browser compatibility.");
-    }
+            recognition.onend = function() {
+                safeExecute(() => {
+                    console.log('Voice recognition ended');
+                    isRecognitionActive = false;
+                    clearTimeout(recognitionTimeout);
+                    
+                    // Only restart if we're supposed to be recording
+                    if (isRecording && !isRecognitionActive) {
+                        setTimeout(() => {
+                            if (isRecording && !isRecognitionActive) {
+                                safeExecute(() => recognition.start());
+                            }
+                        }, 100);
+                    }
+                });
+            };
+        }
+    }, () => {
+        console.warn('Speech Recognition not supported');
+    }, "Voice recognition could not be initialized. Please check your browser compatibility.");
+}
 
     // Update voice status display
     function updateVoiceStatus(message, isError = false) {
@@ -561,56 +568,65 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function startVoiceRecording() {
-        safeExecuteWithFeedback(() => {
-            if (!recognition) {
-                throw new Error('Speech recognition not available');
-            }
-            
-            finalTranscript = document.getElementById('answerBox').value || '';
-            recognition.start();
-            isRecording = true;
-            
-            const voiceBtn = document.getElementById('voiceBtn');
-            const voiceIndicator = document.getElementById('voiceIndicator');
-            
-            if (voiceIndicator) voiceIndicator.classList.add('active');
-            if (voiceBtn) {
-                voiceBtn.textContent = '🔴 Stop Speaking';
-                voiceBtn.classList.remove('btn-success');
-                voiceBtn.classList.add('btn-danger');
-            }
-            
-            updateVoiceStatus('Initializing microphone...', false);
-        }, () => {
-            isRecording = false;
-            updateVoiceStatus('Voice recording failed to start', true);
-        }, "Could not start voice recording. Please check your microphone permissions.");
-    }
-
-    function stopVoiceRecording() {
-        if (recognition && isRecording) {
-            try {
-                recognition.stop();
-            } catch (error) {
-                console.error('Error stopping recognition:', error);
-            }
+    safeExecuteWithFeedback(() => {
+        if (!recognition) {
+            throw new Error('Speech recognition not available');
         }
         
-        isRecording = false;
-        clearTimeout(recognitionTimeout);
+        // Don't start if already active
+        if (isRecognitionActive) {
+            console.log('Recognition already active, skipping start');
+            return;
+        }
+        
+        finalTranscript = document.getElementById('answerBox').value || '';
+        recognition.start();
+        isRecording = true;
         
         const voiceBtn = document.getElementById('voiceBtn');
         const voiceIndicator = document.getElementById('voiceIndicator');
         
-        if (voiceIndicator) voiceIndicator.classList.remove('active');
+        if (voiceIndicator) voiceIndicator.classList.add('active');
         if (voiceBtn) {
-            voiceBtn.textContent = '🎤 Start Speaking';
-            voiceBtn.classList.remove('btn-danger');
-            voiceBtn.classList.add('btn-success');
+            voiceBtn.textContent = '🔴 Stop Speaking';
+            voiceBtn.classList.remove('btn-success');
+            voiceBtn.classList.add('btn-danger');
         }
         
-        updateVoiceStatus('', false);
+        updateVoiceStatus('Initializing microphone...', false);
+    }, () => {
+        isRecording = false;
+        isRecognitionActive = false;
+        updateVoiceStatus('Voice recording failed to start', true);
+    }, "Could not start voice recording. Please check your microphone permissions.");
+}
+
+function stopVoiceRecording() {
+    isRecording = false;
+    isRecognitionActive = false;
+    
+    if (recognition) {
+        try {
+            recognition.stop();
+        } catch (error) {
+            console.error('Error stopping recognition:', error);
+        }
     }
+    
+    clearTimeout(recognitionTimeout);
+    
+    const voiceBtn = document.getElementById('voiceBtn');
+    const voiceIndicator = document.getElementById('voiceIndicator');
+    
+    if (voiceIndicator) voiceIndicator.classList.remove('active');
+    if (voiceBtn) {
+        voiceBtn.textContent = '🎤 Start Speaking';
+        voiceBtn.classList.remove('btn-danger');
+        voiceBtn.classList.add('btn-success');
+    }
+    
+    updateVoiceStatus('', false);
+}
 
     // Timer functions
     function startTimer() {
